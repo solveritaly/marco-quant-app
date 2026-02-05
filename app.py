@@ -5,138 +5,134 @@ import numpy as np
 import plotly.graph_objects as go
 from datetime import datetime
 
-# --- CONFIGURAZIONE ---
-st.set_page_config(page_title="Marco-Quant Ultimate Terminal", layout="wide")
+# --- CONFIGURAZIONE UI ---
+st.set_page_config(page_title="Marco-Quant Global Terminal", layout="wide")
 
-# --- DATABASE PORTAFOGLIO (Session State per salvare i dati mentre navighi) ---
-if 'portfolio' not in st.session_state:
-    st.session_state.portfolio = []
+st.markdown("""
+    <style>
+    .main { background-color: #0e1117; color: white; }
+    .score-giant { font-size: 40px; font-weight: bold; text-align: center; border-radius: 10px; padding: 10px; margin: 5px; }
+    .top-card { background-color: #161b22; border-radius: 15px; padding: 15px; border: 1px solid #30363d; text-align: center; }
+    .led { height: 12px; width: 12px; border-radius: 50%; display: inline-block; margin-left: 5px; }
+    </style>
+    """, unsafe_allow_html=True)
 
-# --- FUNZIONE ANALISI MULTI-FATTORE (0-100) ---
-def get_full_analysis(ticker):
+if 'portfolio' not in st.session_state: st.session_state.portfolio = []
+
+# --- FUNZIONE DI ANALISI AVANZATA ---
+@st.cache_data(ttl=3600)
+def get_analysis(ticker):
     try:
         t = yf.Ticker(ticker)
-        df = t.history(period="2y")
+        df = t.history(period="1y")
         if df.empty: return None
-        
-        # 1. Analisi Tecnica & Momentum (30%)
+        info = t.info
         close = df['Close'].iloc[-1]
-        sma200 = df['Close'].rolling(200).mean().iloc[-1]
-        sma20 = df['Close'].rolling(20).mean().iloc[-1]
-        momentum = (close / df['Close'].iloc[-20]) - 1
         
-        # 2. Volatilità & Volumi (30%)
+        # 1. Tecnica & Trend
+        sma200 = df['Close'].rolling(200).mean().iloc[-1]
+        sma50 = df['Close'].rolling(50).mean().iloc[-1]
+        sma20 = df['Close'].rolling(20).mean().iloc[-1]
+        
+        # 2. Volatilità & Volumi
         std20 = df['Close'].rolling(20).std().iloc[-1]
         z_score = (sma20 - close) / std20 if std20 > 0 else 0
         vol_ratio = df['Volume'].iloc[-1] / df['Volume'].tail(20).mean()
         
-        # 3. Stagionalità Statistica (20%)
-        month_now = datetime.now().month
-        hist_returns = df['Close'].pct_change().groupby(df.index.month).mean()
-        seasonality_factor = hist_returns.get(month_now, 0)
-        
-        # CALCOLO SCORE FINALE (0-100)
-        # Più il prezzo è a sconto (z_score alto), momentum positivo e volumi alti, più lo score sale
-        score_tech = np.clip((1 / (1 + np.exp(-z_score))) * 50, 0, 50)
-        score_mom = 25 if momentum > 0 else 5
-        score_vol = 15 if vol_ratio > 1.2 else 5
-        score_seas = 10 if seasonality_factor > 0 else 0
-        
-        total_score = int(score_tech + score_mom + score_vol + score_seas)
+        # 3. Calcolo Score Dinamico (0-100)
+        score = int(np.clip(((1 / (1 + np.exp(-z_score))) * 60) + (20 if close > sma200 else 0) + (20 if vol_ratio > 1.2 else 0), 0, 100))
         
         return {
-            "Ticker": ticker, "Nome": t.info.get('shortName', ticker),
-            "Prezzo": round(close, 2), "Score": total_score,
-            "L": close > sma200, "M": close > df['Close'].rolling(50).mean().iloc[-1], "B": close > sma20,
-            "History": df, "Div": (t.info.get('dividendYield', 0) or 0)
+            "Ticker": ticker, "Nome": info.get('shortName', ticker), "Prezzo": round(close, 2),
+            "Score": score, "L": close > sma200, "M": close > sma50, "B": close > sma20,
+            "Color": "#23d160" if score > 75 else "#ffdd57" if score > 50 else "#ff3860",
+            "History": df, "Div": info.get('dividendYield', 0)
         }
     except: return None
 
-# --- SIDEBAR: CREAZIONE PORTAFOGLIO ---
-with st.sidebar:
-    st.header("🛒 Gestione Portafoglio")
-    with st.form("add_asset"):
-        t_input = st.text_input("Ticker (es. LDO.MI, BTC-EUR, NVDA)").upper()
-        q_input = st.number_input("Quantità Acquistata", min_value=0.0, step=1.0)
-        if st.form_submit_button("Aggiungi al Portafoglio"):
-            if t_input:
-                asset_data = get_full_analysis(t_input)
-                if asset_data:
-                    st.session_state.portfolio.append({"ticker": t_input, "qty": q_input, "price": asset_data['Prezzo']})
-                    st.success(f"Aggiunto {t_input}")
-    
-    if st.session_state.portfolio:
-        st.write("---")
-        if st.button("Svuota Portafoglio"):
-            st.session_state.portfolio = []
-            st.rerun()
+# --- HOME SCREEN: TOP 5 E RICERCA ---
+st.title("🏹 Marco-Quant Global Terminal")
 
-# --- MAIN INTERFACE ---
-st.title("🏹 Marco-Quant Master Terminal")
+tabs = st.tabs(["🏠 Home & Top Picks", "🗺️ Esplora Mercati", "💼 Portafoglio", "📈 Road to 1M"])
 
-tabs = st.tabs(["🌍 Radar Mercati", "💼 Mio Portafoglio", "📈 Road to 1 Million"])
-
-# TAB 1: RADAR (AUTO-LOAD)
 with tabs[0]:
+    st.subheader("🔥 Top 5 Opportunità del Momento")
+    # Scan rapido su una selezione globale per la Home
+    seed_list = ["LDO.MI", "NVDA", "BTC-EUR", "NOVO-B.CO", "GC=F", "AAPL", "MSFT", "ETH-EUR", "ASML.AS", "ISP.MI"]
+    top_picks = []
+    with st.spinner("Analizzando i mercati..."):
+        for s in seed_list:
+            res = get_analysis(s)
+            if res: top_picks.append(res)
+    
+    top_df = pd.DataFrame(top_picks).sort_values("Score", ascending=False).head(5)
+    
+    cols = st.columns(5)
+    for i, (_, row) in enumerate(top_df.iterrows()):
+        with cols[i]:
+            st.markdown(f"""<div class="top-card">
+                <small>{row['Ticker']}</small>
+                <h3>{row['Nome'][:12]}</h3>
+                <div class="score-giant" style="color:{row['Color']}; background:{row['Color']}22;">{row['Score']}</div>
+                <small>L:{'🟢' if row['L'] else '🔴'} M:{'🟢' if row['M'] else '🔴'} B:{'🟢' if row['B'] else '🔴'}</small>
+            </div>""", unsafe_allow_html=True)
+
+    st.divider()
+    st.subheader("🔍 Cerca e Aggiungi Titolo (Tutto il Mondo)")
+    c1, c2, c3 = st.columns([3, 1, 1])
+    search_ticker = c1.text_input("Inserisci Ticker (es: TSLA, ENI.MI, ETH-EUR, US10Y)").upper()
+    qty = c2.number_input("Quantità", min_value=0.0, step=1.0)
+    
+    if search_ticker:
+        res_search = get_analysis(search_ticker)
+        if res_search:
+            st.markdown(f"**Risultato:** {res_search['Nome']} - Prezzo: €{res_search['Prezzo']}")
+            if c3.button("Aggiungi in Portafoglio"):
+                st.session_state.portfolio.append({"ticker": search_ticker, "qty": qty, "price": res_search['Prezzo']})
+                st.success("Aggiunto!")
+        else:
+            st.error("Ticker non trovato. Usa i suffissi: .MI (Italia), .DE (Germania), -EUR (Crypto).")
+
+with tabs[1]:
     mercati = {
         "🇮🇹 Italia": ["LDO.MI", "ENEL.MI", "ISP.MI", "UCG.MI", "RACE.MI"],
-        "🇺🇸 USA": ["NVDA", "AAPL", "MSFT", "GOOGL", "TSLA"],
-        "📊 ETF & Strategico": ["SWDA.MI", "CSSPX.MI", "EIMI.MI", "GC=F", "BTC-EUR"]
+        "🇺🇸 USA": ["NVDA", "AAPL", "MSFT", "GOOGL", "AMZN"],
+        "🇪🇺 Europa": ["NOVO-B.CO", "ASML.AS", "MC.PA"],
+        "📊 ETF & Bond": ["SWDA.MI", "CSSPX.MI", "EIMI.MI", "TLT"],
+        "🪙 Crypto/Materie": ["BTC-EUR", "GC=F", "CL=F"]
     }
-    sel_mkt = st.selectbox("Cambia Mercato", list(mercati.keys()))
-    
-    # Caricamento automatico
-    results = []
-    with st.spinner('Aggiornamento dati real-time...'):
-        for t in mercati[sel_mkt]:
-            data = get_full_analysis(t)
-            if data: results.append(data)
-    
-    df_res = pd.DataFrame(results)
-    for _, row in df_res.sort_values("Score", ascending=False).iterrows():
-        c = st.columns([2, 2, 1, 1, 1, 1])
-        c[0].write(f"**{row['Nome']}**")
-        c[1].progress(row['Score']/100, text=f"Score: {row['Score']}")
-        c[2].markdown(f"L: {'🟢' if row['L'] else '🔴'}")
-        c[3].markdown(f"M: {'🟢' if row['M'] else '🔴'}")
-        c[4].markdown(f"B: {'🟢' if row['B'] else '🔴'}")
-        c[5].write(f"€{row['Prezzo']}")
+    sel = st.selectbox("Seleziona Categoria", list(mercati.keys()))
+    m_data = [get_analysis(t) for t in mercati[sel] if get_analysis(t)]
+    for row in m_data:
+        col = st.columns([2, 1, 1, 1, 1])
+        col[0].write(f"**{row['Nome']}**")
+        col[1].markdown(f"<span style='color:{row['Color']}; font-weight:bold; font-size:20px;'>{row['Score']}</span>", unsafe_allow_html=True)
+        col[2].write(f"L:{'🟢' if row['L'] else '🔴'} M:{'🟢' if row['M'] else '🔴'} B:{'🟢' if row['B'] else '🔴'}")
+        col[3].write(f"€{row['Prezzo']}")
+        if col[4].button("Grafico", key=row['Ticker']):
+            st.plotly_chart(go.Figure(data=[go.Candlestick(x=row['History'].index, open=row['History']['Open'], high=row['History']['High'], low=row['History']['Low'], close=row['History']['Close'])]).update_layout(template="plotly_dark", height=300))
 
-# TAB 2: PORTAFOGLIO REALE
-with tabs[1]:
-    st.header("💼 Situazione Attuale")
-    if not st.session_state.portfolio:
-        st.info("Il tuo portafoglio è vuoto. Aggiungi titoli dalla barra laterale.")
-    else:
-        total_val = 0
-        port_list = []
-        for item in st.session_state.portfolio:
-            d = get_full_analysis(item['ticker'])
-            val = d['Prezzo'] * item['qty']
-            total_val += val
-            port_list.append({"Asset": d['Nome'], "Quantità": item['qty'], "Valore Attuale": f"€{val:,.2f}", "Score": d['Score']})
-        
-        st.table(pd.DataFrame(port_list))
-        st.metric("VALORE TOTALE PORTAFOGLIO", f"€{total_val:,.2f}")
-
-# TAB 3: ROAD TO 1 MILLION (DINAMICA)
 with tabs[2]:
-    st.header("🚀 Obiettivo 1.000.000€")
-    cap_attuale = total_val if st.session_state.portfolio else 1000
-    pac = st.number_input("PAC Mensile (€)", value=500)
-    rendimento = st.slider("Rendimento Annuo Stimato (%)", 5, 15, 9) / 100
-    
-    progressione = []
-    temp_cap = cap_attuale
-    for m in range(480): # 40 anni
-        temp_cap = (temp_cap + pac) * (1 + rendimento/12)
-        if m % 12 == 0: progressione.append(temp_cap)
-        if temp_cap >= 1000000 and 'traguardo' not in locals():
-            traguardo = m // 12
-    
-    st.plotly_chart(go.Figure(data=[go.Scatter(y=progressione, name="Capitale", line=dict(color='#23d160', width=4))]).update_layout(template="plotly_dark"))
-    
-    if 'traguardo' in locals():
-        st.success(f"🎯 Con questo portafoglio e questo PAC, raggiungerai il Milione in **{traguardo} anni**!")
+    st.header("💼 Il Mio Portafoglio Reale")
+    if not st.session_state.portfolio:
+        st.info("Portafoglio vuoto. Cerca un titolo in Home e clicca 'Aggiungi'.")
     else:
-        st.warning("Il milione è lontano, prova ad aumentare il PAC o il rendimento degli asset selezionati.")
+        p_list = []
+        tot = 0
+        for item in st.session_state.portfolio:
+            d = get_analysis(item['ticker'])
+            val = d['Prezzo'] * item['qty']
+            tot += val
+            p_list.append({"Asset": d['Nome'], "Quantità": item['qty'], "Valore": f"€{val:,.2f}", "Score": d['Score']})
+        st.table(pd.DataFrame(p_list))
+        st.metric("Valore Totale", f"€{tot:,.2f}")
+
+with tabs[3]:
+    st.header("📈 Road to 1 Million")
+    pac = st.number_input("PAC Mensile (€)", value=500)
+    current_val = sum([get_analysis(i['ticker'])['Prezzo']*i['qty'] for i in st.session_state.portfolio]) if st.session_state.portfolio else 1000
+    prog = []
+    for m in range(480):
+        current_val = (current_val + pac) * (1 + 0.09/12)
+        if m % 12 == 0: prog.append(current_val)
+    st.plotly_chart(go.Figure(data=[go.Scatter(y=prog, name="Capitale", line=dict(color='#23d160', width=4))]).update_layout(template="plotly_dark"))
