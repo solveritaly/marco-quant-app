@@ -5,25 +5,25 @@ import numpy as np
 import plotly.graph_objects as go
 from datetime import datetime
 
-# CONFIGURAZIONE GRAFICA
-st.set_page_config(page_title="Marco-Quant Ultimate", layout="wide")
+# --- CONFIGURAZIONE UI ---
+st.set_page_config(page_title="Marco-Quant Global Terminal", layout="wide")
 
 st.markdown("""
     <style>
     .main { background-color: #0e1117; color: white; }
-    .status-led { height: 18px; width: 18px; border-radius: 50%; display: inline-block; margin-right: 8px; border: 2px solid #30363d; }
+    .status-led { height: 18px; width: 18px; border-radius: 50%; display: inline-block; margin-right: 5px; border: 1px solid #30363d; }
     .led-green { background-color: #23d160; box-shadow: 0 0 10px #23d160; }
     .led-red { background-color: #ff3860; box-shadow: 0 0 10px #ff3860; }
-    .score-box { font-size: 20px; font-weight: bold; color: #23d160; }
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] { background-color: #161b22; border-radius: 5px; padding: 10px; color: white; }
     </style>
     """, unsafe_allow_html=True)
 
-# MOTORE DI CALCOLO
-def get_data(ticker):
+# --- MOTORE DI ANALISI ---
+def get_analysis(ticker):
     try:
         t = yf.Ticker(ticker)
-        # Scarichiamo 2 anni per avere la media a 200 giorni corretta
-        df = t.history(period="2y", interval="1d", auto_adjust=True)
+        df = t.history(period="2y", auto_adjust=True)
         if df.empty: return None
         
         close = df['Close'].iloc[-1]
@@ -32,7 +32,7 @@ def get_data(ticker):
         sma20 = df['Close'].rolling(20).mean().iloc[-1]
         std20 = df['Close'].rolling(20).std().iloc[-1]
         
-        # Z-Score per Score Vantaggio (0-100)
+        # Score Vantaggio (Z-Score)
         z = (sma20 - close) / (std20 if std20 > 0 else 1)
         score = int(np.clip((1 / (1 + np.exp(-z)) * 100), 0, 100))
         
@@ -40,88 +40,90 @@ def get_data(ticker):
             "Ticker": ticker,
             "Nome": t.info.get('shortName', ticker),
             "Prezzo": round(close, 2),
-            "L": close > sma200,
-            "M": close > sma50,
-            "B": close > sma20,
+            "L": close > sma200, "M": close > sma50, "B": close > sma20,
             "Score": score,
-            "Div": (t.info.get('dividendYield', 0) or 0) * 100,
-            "History": df['Close']
+            "History": df
         }
     except: return None
 
-# INTERFACCIA
-st.title("🏹 Marco-Quant: Clone Quantaste v10.0")
-
-# Input Capitale e PAC
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("💰 Gestione Patrimonio")
-    capitale_totale = st.number_input("Capitale Totale Attuale (€)", value=10000)
-    pac_mensile = st.number_input("Versamento Mensile (€)", value=500)
+    cap_tot = st.number_input("Capitale Totale (€)", value=10000)
+    pac = st.number_input("PAC Mensile (€)", value=500)
     st.divider()
-    st.info("Logica 30/70 attiva: 30% Aggressivo, 70% Strategico.")
+    st.info("Logica 30/70: 30% Aggressivo (Azioni/Crypto), 70% Strategico (ETF/Bond/Materie).")
 
-tabs = st.tabs(["📊 Radar Mercati", "🚀 Road to 1 Million", "💼 Il Mio Portafoglio"])
+st.title("🏹 Marco-Quant: Global Market Radar")
 
-with tabs[0]:
-    mercati = {
-        "🇮🇹 ITALIA": ["LDO.MI", "ENEL.MI", "ISP.MI", "UCG.MI", "RACE.MI"],
-        "🇺🇸 USA": ["NVDA", "AAPL", "MSFT", "GOOGL", "TSLA", "BRK-B"],
-        "🇪🇺 EUROPA": ["NOVO-B.CO", "ASML.AS", "MC.PA", "SAP.DE"],
-        "🪙 CRYPTO/STRAT": ["BTC-EUR", "ETH-EUR", "GC=F", "CL=F", "SPY", "VGK", "TLT"]
-    }
-    
-    sel_mkt = st.selectbox("Seleziona Mercato", list(mercati.keys()))
-    
-    if st.button("🔄 AGGIORNA DATI REAL-TIME"):
-        data = [get_data(t) for t in mercati[sel_mkt] if get_data(t)]
-        df = pd.DataFrame(data)
-        
-        # Header Tabella
-        h1, h2, h3, h4, h5, h6 = st.columns([2, 2, 1, 1, 1, 1])
-        h1.write("**Asset**")
-        h2.write("**Score Vantaggio**")
-        h3.write("**L**")
-        h4.write("**M**")
-        h5.write("**B**")
-        h6.write("**Prezzo**")
-        
-        for _, row in df.iterrows():
-            c1, c2, c3, c4, c5, c6 = st.columns([2, 2, 1, 1, 1, 1])
-            c1.write(f"**{row['Nome']}**")
-            c2.progress(row['Score']/100)
+# --- CATEGORIE MERCATI ---
+categorie = {
+    "🇮🇹 Italia": ["LDO.MI", "ENEL.MI", "ISP.MI", "UCG.MI", "RACE.MI", "STMMI.MI", "PST.MI", "AZM.MI"],
+    "🇺🇸 USA": ["NVDA", "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "META", "AVGO"],
+    "🇪🇺 Europa": ["NOVO-B.CO", "ASML.AS", "MC.PA", "SAP.DE", "OR.PA", "SIE.DE"],
+    "📊 ETF (Strategico)": ["SWDA.MI", "CSSPX.MI", "EIMI.MI", "VUSA.L", "IBCI.MI", "TLT", "IEF"],
+    "🪙 Crypto & Materie": ["BTC-EUR", "ETH-EUR", "SOL-EUR", "GC=F", "CL=F", "PA=F"]
+}
+
+tabs = st.tabs(list(categorie.keys()) + ["📈 Road to 1 Million"])
+
+# --- GENERAZIONE TABELLE PER OGNI MERCATO ---
+for i, (label, tickers) in enumerate(categorie.items()):
+    with tabs[i]:
+        st.subheader(f"Analisi Quantitativa: {label}")
+        if st.button(f"Aggiorna {label}"):
+            results = [get_analysis(t) for t in tickers if get_analysis(t)]
+            df_res = pd.DataFrame(results)
             
-            # Semafori LED
-            l_led = "led-green" if row['L'] else "led-red"
-            m_led = "led-green" if row['M'] else "led-red"
-            b_led = "led-green" if row['B'] else "led-red"
+            # Header
+            c_h = st.columns([2, 2, 1, 1, 1, 1])
+            c_h[0].write("**Asset**")
+            c_h[1].write("**Score Vantaggio**")
+            c_h[2].write("**L**")
+            c_h[3].write("**M**")
+            c_h[4].write("**B**")
+            c_h[5].write("**Prezzo**")
             
-            c3.markdown(f'<div class="status-led {l_led}"></div>', unsafe_allow_html=True)
-            c4.markdown(f'<div class="status-led {m_led}"></div>', unsafe_allow_html=True)
-            c5.markdown(f'<div class="status-led {b_led}"></div>', unsafe_allow_html=True)
-            c6.write(f"€{row['Prezzo']}")
+            for _, row in df_res.sort_values("Score", ascending=False).iterrows():
+                cols = st.columns([2, 2, 1, 1, 1, 1])
+                cols[0].write(f"**{row['Nome']}**")
+                cols[1].progress(row['Score']/100)
+                
+                # Semafori
+                cols[2].markdown(f'<div class="status-led {"led-green" if row["L"] else "led-red"}"></div>', unsafe_allow_html=True)
+                cols[3].markdown(f'<div class="status-led {"led-green" if row["M"] else "led-red"}"></div>', unsafe_allow_html=True)
+                cols[4].markdown(f'<div class="status-led {"led-green" if row["B"] else "led-red"}"></div>', unsafe_allow_html=True)
+                cols[5].write(f"€{row['Prezzo']}")
+                
+                with st.expander("Analisi Dettagliata"):
+                    col_sx, col_dx = st.columns([3, 2])
+                    # Grafico
+                    fig = go.Figure(data=[go.Candlestick(x=row['History'].index, open=row['History']['Open'], high=row['History']['High'], low=row['History']['Low'], close=row['History']['Close'])])
+                    fig.update_layout(template="plotly_dark", height=250, margin=dict(l=0,r=0,b=0,t=0))
+                    col_sx.plotly_chart(fig, use_container_width=True)
+                    # Strategia
+                    col_dx.write("### 🏹 Operatività")
+                    if row['Score'] > 80 and row['B']:
+                        col_dx.success("SEGNALE: ACCUMULO IMMEDIATO")
+                    elif row['Score'] > 70:
+                        col_dx.warning("SEGNALE: ATTENDI VERDE SU BREVE (B)")
+                    else:
+                        col_dx.error("SEGNALE: ATTENDI SCONTO STATISTICO")
+                    col_dx.write(f"**Target Entry:** €{round(row['Prezzo']*0.98, 2)}")
+                    col_dx.write(f"**Target Exit:** €{round(row['Prezzo']*1.10, 2)}")
 
-with tabs[1]:
-    st.header("📈 Obiettivo 1.000.000€")
-    # Calcolo proiezione
-    mesi = 360 # 30 anni
-    rendimento_annuo = 0.09 # 9% medio
+# --- TAB PROIEZIONE 1 MILIONE ---
+with tabs[-1]:
+    st.header("💰 Obiettivo 1.000.000€")
+    anni = st.slider("Seleziona Orizzonte Temporale (Anni)", 5, 40, 25)
+    tasso_stimato = 0.09 # 9% annuo medio
     progressione = []
-    cap = capitale_totale
-    for m in range(mesi):
-        cap = (cap + pac_mensile) * (1 + rendimento_annuo/12)
+    cap = cap_tot
+    for m in range(anni * 12):
+        cap = (cap + pac) * (1 + tasso_stimato/12)
         if m % 12 == 0: progressione.append(cap)
     
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(y=progressione, name="Crescita Portafoglio", line=dict(color='#23d160', width=4)))
-    fig.add_hline(y=1000000, line_dash="dash", line_color="gold", annotation_text="IL MILIONE")
-    st.plotly_chart(fig, use_container_width=True)
-
-with tabs[2]:
-    st.header("⚖️ Ribilanciamento 30/70")
-    q_agg = capitale_totale * 0.30
-    q_strat = capitale_totale * 0.70
-    
-    col1, col2 = st.columns(2)
-    col1.metric("Quota Azioni/Crypto (30%)", f"€{int(q_agg)}")
-    col2.metric("Quota Strategica (70%)", f"€{int(q_strat)}")
-    st.info("Usa i 3.000€ su Revolut per colmare il gap del settore che ha lo Score più alto nel Radar.")
+    fig_m = go.Figure(data=[go.Scatter(y=progressione, line=dict(color='#23d160', width=4))])
+    fig_m.add_hline(y=1000000, line_dash="dash", line_color="gold", annotation_text="TARGET 1 MILIONE")
+    fig_m.update_layout(template="plotly_dark", title="Proiezione Crescita con Interesse Composto")
+    st.plotly_chart(fig_m, use_container_width=True)
