@@ -18,7 +18,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# Inizializzazione sessione
+# Inizializzazione sessione per portafoglio e ordinamento
 if 'portfolio' not in st.session_state: st.session_state.portfolio = {}
 if 'sort_col' not in st.session_state: st.session_state.sort_col = "Score"
 if 'sort_asc' not in st.session_state: st.session_state.sort_asc = False
@@ -31,23 +31,55 @@ def get_analysis(ticker):
         if df.empty: return None
         close = df['Close'].iloc[-1]
         
-        # Indicatori Tecnici
+        # Indicatori Tecnici per il calcolo
         sma200 = df['Close'].rolling(200).mean().iloc[-1]
         sma50 = df['Close'].rolling(50).mean().iloc[-1]
         sma20 = df['Close'].rolling(20).mean().iloc[-1]
         std20 = df['Close'].rolling(20).std().iloc[-1]
         
-        # Calcolo Score (1-100)
+        # Score Marco-Quant (1-100)
         score = int(np.clip(30 + (40 if close > sma200 else 0) + (20 if close > sma50 else 0) + (10 if close > sma20 else 0), 1, 100))
-        r = int(255 * (1 - score/100)); g = int(255 * (score/100))
+        r = int(255 * (1 - score/100))
+        g = int(255 * (score/100))
         
-        # Livelli Operativi di Trading
+        # Livelli di Trading basati sulla volatilità
         entry = close * 0.99
         tp = close + (std20 * 3)
         sl = close - (std20 * 2)
         
         return {
-            "Symbol": ticker, "Nome": t.info.get('shortName', ticker),
-            "Score": score, "Color": f'#{r:02x}{g:02x}00', "Prezzo": round(close, 2),
-            "L": close > sma200, "M": close > sma50, "B": close > sma20,
-            "Entry": round(entry, 2), "TP": round(tp, 2), "SL": round(sl, 2), "History": df
+            "Symbol": ticker, 
+            "Nome": t.info.get('shortName', ticker),
+            "Score": score, 
+            "Color": f'#{r:02x}{g:02x}00', 
+            "Prezzo": round(close, 2),
+            "L": close > sma200, 
+            "M": close > sma50, 
+            "B": close > sma20,
+            "Entry": round(entry, 2), 
+            "TP": round(tp, 2), 
+            "SL": round(sl, 2), 
+            "History": df
+        }
+    except:
+        return None
+
+st.title("🏹 MARCO-QUANT TRADING TERMINAL")
+
+# --- 2. TOP 5 OPPORTUNITÀ ---
+st.subheader("🔥 Top 5 Opportunità")
+top_tickers = ["LDO.MI", "NVDA", "BTC-EUR", "GC=F", "ASML"]
+t_cols = st.columns(5)
+for i, ticker_name in enumerate(top_tickers):
+    d = get_analysis(ticker_name)
+    if d:
+        with t_cols[i]:
+            st.markdown(f"""<div style="text-align:center; border:2px solid {d['Color']}; border-radius:10px; padding:10px;">
+                <span style="color:{d['Color']}; font-size:26px; font-weight:bold;">{d['Score']}</span><br>
+                <b>{d['Symbol']}</b><br>€{d['Prezzo']}</div>""", unsafe_allow_html=True)
+
+st.divider()
+
+# --- 3. TABELLE MERCATI ---
+mercati = {
+    "
