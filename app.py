@@ -6,10 +6,9 @@ import numpy as np
 # --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="Marco-Quant Terminal", layout="wide")
 
-# CSS per Score, Semafori e Icone
 st.markdown("""
     <style>
-    .score-text { font-weight: bold; font-size: 26px; }
+    .score-text { font-weight: bold; font-size: 24px; }
     .semaforo {
         display: block;
         width: 35px;
@@ -23,14 +22,15 @@ st.markdown("""
     }
     .bg-green { background-color: #23d160; }
     .bg-red { background-color: #ff3860; }
-    .stButton>button { border: none; background: transparent; font-size: 20px; }
+    /* Rende i nomi delle colonne simili a pulsanti */
+    .col-header { font-weight: bold; color: #FF8C00; cursor: pointer; text-align: center; }
     </style>
     """, unsafe_allow_html=True)
 
-if 'portfolio' not in st.session_state:
-    st.session_state.portfolio = {}
+if 'portfolio' not in st.session_state: st.session_state.portfolio = {}
+if 'sort_col' not in st.session_state: st.session_state.sort_col = "Score"
+if 'sort_asc' not in st.session_state: st.session_state.sort_asc = False
 
-# --- FUNZIONE ANALISI ---
 @st.cache_data(ttl=3600)
 def get_analysis(ticker):
     try:
@@ -42,97 +42,99 @@ def get_analysis(ticker):
         sma50 = df['Close'].rolling(50).mean().iloc[-1]
         sma20 = df['Close'].rolling(20).mean().iloc[-1]
         
-        # Calcolo Score
         score = 30
         if close > sma200: score += 40
         if close > sma50: score += 20
         if close > sma20: score += 10
         score = int(np.clip(score, 1, 100))
         
-        # Colore Score (1 Rosso -> 100 Verde)
         r = int(255 * (1 - score/100))
         g = int(255 * (score/100))
-        color = f'#{r:02x}{g:02x}00'
         
         return {
             "Symbol": ticker, "Nome": t.info.get('shortName', ticker),
-            "Score": score, "Color": color, "Prezzo": round(close, 2),
+            "Score": score, "Color": f'#{r:02x}{g:02x}00', "Prezzo": round(close, 2),
             "L": close > sma200, "M": close > sma50, "B": close > sma20,
-            "Div": (t.info.get('dividendYield', 0) or 0) * 100
+            "Div": (t.info.get('dividendYield', 0) or 0) * 100, "History": df
         }
     except: return None
 
 st.title("🏹 MARCO-QUANT GLOBAL TERMINAL")
 
-# --- SEZIONE TOP 5 ---
+# --- TOP 5 (Sempre visibile) ---
 st.subheader("🔥 TOP 5 OPPORTUNITÀ")
-top_tickers = ["LDO.MI", "NVDA", "BTC-EUR", "GC=F", "UCG.MI"]
+top_tickers = ["LDO.MI", "NVDA", "BTC-EUR", "GC=F", "NOVO-B.CO"]
 top_cols = st.columns(5)
 for i, t in enumerate(top_tickers):
     data = get_analysis(t)
     if data:
         with top_cols[i]:
-            st.markdown(f'<div style="text-align:center; border:1px solid #ddd; border-radius:10px; padding:10px;">'
-                        f'<span style="color:{data["Color"]}; font-size:30px; font-weight:bold;">{data["Score"]}</span><br>'
-                        f'<b>{data["Symbol"]}</b><br>€{data["Prezzo"]}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="text-align:center; border:2px solid {data["Color"]}; border-radius:10px; padding:10px;">'
+                        f'<span style="color:{data["Color"]}; font-size:28px; font-weight:bold;">{data["Score"]}</span><br>'
+                        f'<b>{data["Symbol"]}</b></div>', unsafe_allow_html=True)
 
 st.divider()
 
-# --- TABELLE MERCATI ---
+# --- TABELLE CON ORDINAMENTO CLICCABILE ---
 tabs = st.tabs(["🇮🇹 Italia", "🇺🇸 USA", "📊 ETF", "🪙 Crypto", "💼 Portafoglio"])
 mercati = {
     "🇮🇹 Italia": ["LDO.MI", "ENEL.MI", "ISP.MI", "UCG.MI", "RACE.MI", "ENI.MI"],
-    "🇺🇸 USA": ["AAPL", "NVDA", "MSFT", "TSLA", "AMZN", "META"],
+    "🇺🇸 USA": ["AAPL", "NVDA", "MSFT", "TSLA", "AMZN", "GOOGL"],
     "📊 ETF": ["SWDA.MI", "CSSPX.MI", "EIMI.MI", "TLT"],
     "🪙 Crypto": ["BTC-EUR", "ETH-EUR", "SOL-EUR"]
 }
 
 for tab, m_name in zip(tabs[:4], mercati.keys()):
     with tab:
-        # Recupero dati per la tabella
         raw_data = [get_analysis(t) for t in mercati[m_name] if get_analysis(t)]
         df_display = pd.DataFrame(raw_data)
         
-        # Header con selezione ordinamento
-        sort_col = st.selectbox(f"Ordina {m_name} per:", ["Score", "L", "M", "B", "Prezzo"], key=f"sort_{m_name}")
-        df_display = df_display.sort_values(by=sort_col, ascending=False)
+        # Logica di ordinamento
+        if not df_display.empty:
+            df_display = df_display.sort_values(by=st.session_state.sort_col, ascending=st.session_state.sort_asc)
 
-        # Tabella visuale
+        # Header clikkabili (Simulati con bottoni piatti per invertire l'ordine)
+        h1, h2, h3, h4, h5, h6, h7 = st.columns([2, 1, 1, 0.6, 0.6, 0.6, 1.2])
+        if h1.button("NOME ↕️", key=f"h1_{m_name}"): 
+            st.session_state.sort_col = "Nome"; st.session_state.sort_asc = not st.session_state.sort_asc; st.rerun()
+        if h2.button("SCORE ↕️", key=f"h2_{m_name}"): 
+            st.session_state.sort_col = "Score"; st.session_state.sort_asc = not st.session_state.sort_asc; st.rerun()
+        if h3.button("PREZZO ↕️", key=f"h3_{m_name}"): 
+            st.session_state.sort_col = "Prezzo"; st.session_state.sort_asc = not st.session_state.sort_asc; st.rerun()
+        h4.markdown('<p class="col-header">L</p>', unsafe_allow_html=True)
+        h5.markdown('<p class="col-header">M</p>', unsafe_allow_html=True)
+        h6.markdown('<p class="col-header">B</p>', unsafe_allow_html=True)
+        h7.write("**DETTAGLI**")
+        st.write("---")
+
         for _, row in df_display.iterrows():
-            c1, c2, c3, c4, c5, c6, c7 = st.columns([2, 1, 1, 0.6, 0.6, 0.6, 1.5])
-            
+            c1, c2, c3, c4, c5, c6, c7 = st.columns([2, 1, 1, 0.6, 0.6, 0.6, 1.2])
             c1.write(f"**{row['Nome']}**")
             c2.markdown(f'<span class="score-text" style="color:{row["Color"]}">{row["Score"]}</span>', unsafe_allow_html=True)
             c3.write(f"€{row['Prezzo']}")
-            
-            # Colonne Semafori L M B divise
             c4.markdown(f'<div class="semaforo {"bg-green" if row["L"] else "bg-red"}">L</div>', unsafe_allow_html=True)
             c5.markdown(f'<div class="semaforo {"bg-green" if row["M"] else "bg-red"}">M</div>', unsafe_allow_html=True)
             c6.markdown(f'<div class="semaforo {"bg-green" if row["B"] else "bg-red"}">B</div>', unsafe_allow_html=True)
             
-            # Dettagli (+) e Carrello (🛒)
             with c7:
-                sub_c1, sub_c2 = st.columns(2)
-                with sub_c1:
+                det, car = st.columns(2)
+                with det:
                     with st.expander("➕"):
                         st.write(f"Dividendi: {row['Div']:.2f}%")
-                        st.write(f"Ticker: {row['Symbol']}")
-                with sub_c2:
+                        # Mini grafico
+                        fig = go.Figure(data=[go.Scatter(y=row['History']['Close'].tail(30), line=dict(color=row['Color']))])
+                        fig.update_layout(height=100, margin=dict(l=0,r=0,b=0,t=0), xaxis_visible=False, yaxis_visible=False)
+                        st.plotly_chart(fig, use_container_width=True)
+                with car:
                     with st.popover("🛒"):
-                        qty = st.number_input("Quantità", min_value=0.0, key=f"qty_{row['Symbol']}")
-                        if st.button("Conferma", key=f"add_{row['Symbol']}"):
-                            st.session_state.portfolio[row['Symbol']] = {'qty': qty, 'price': row['Prezzo'], 'name': row['Nome']}
-                            st.success("Aggiunto")
+                        q = st.number_input("Quantità", min_value=0.0, key=f"q_{row['Symbol']}")
+                        if st.button("Conferma", key=f"a_{row['Symbol']}"):
+                            st.session_state.portfolio[row['Symbol']] = {'qty': q, 'price': row['Prezzo'], 'name': row['Nome']}
+                            st.toast("Aggiunto!")
 
 # --- PORTAFOGLIO ---
 with tabs[4]:
-    st.header("💼 Il mio Portafoglio")
+    st.header("💼 Portafoglio Reale")
     if st.session_state.portfolio:
-        tot_cap = 0
         for tick, info in st.session_state.portfolio.items():
-            v = info['qty'] * info['price']
-            tot_cap += v
-            st.write(f"**{info['name']}**: {info['qty']} pz | Valore: €{v:,.2f}")
-        st.metric("CAPITALE TOTALE", f"€{tot_cap:,.2f}")
-    else:
-        st.info("Il carrello è vuoto.")
+            st.write(f"**{info['name']}**: {info['qty']} quote")
