@@ -20,27 +20,34 @@ if 'portfolio' not in st.session_state: st.session_state.portfolio = {}
 @st.cache_data(ttl=600)
 def get_analysis(ticker):
     try:
-        # LASCIAMO CHE YFINANCE GESTISCA LA CONNESSIONE DA SOLO
+        # Lasciamo che YF gestisca la connessione
         t = yf.Ticker(ticker)
         df = t.history(period="1y")
         if df.empty: return None
         
-        close = df['Close'].iloc[-1]
+        close = float(df['Close'].iloc[-1])
         sma200 = df['Close'].rolling(200).mean().iloc[-1]
         sma50 = df['Close'].rolling(50).mean().iloc[-1]
         sma20 = df['Close'].rolling(20).mean().iloc[-1]
         std20 = df['Close'].rolling(20).std().iloc[-1]
         
+        # Score Marco-Quant
         score = int(np.clip(30 + (40 if close > sma200 else 0) + (20 if close > sma50 else 0) + (10 if close > sma20 else 0), 1, 100))
         
         return {
-            "Symbol": ticker, "Nome": t.info.get('shortName', ticker),
-            "Score": score, "Prezzo": round(close, 2),
-            "L": close > sma200, "M": close > sma50, "B": close > sma20,
-            "Entry": round(close * 0.99, 2), "TP": round(close + (std20*3), 2), "SL": round(close - (std20*2), 2),
+            "Symbol": ticker, 
+            "Nome": t.info.get('shortName', ticker),
+            "Score": score, 
+            "Prezzo": round(close, 2),
+            "L": close > sma200, 
+            "M": close > sma50, 
+            "B": close > sma20,
+            "Entry": round(close * 0.99, 2), 
+            "TP": round(close + (std20 * 3), 2), 
+            "SL": round(close - (std20 * 2), 2),
             "History": df
         }
-    except Exception as e:
+    except Exception:
         return None
 
 st.title("🏹 MARCO-QUANT GLOBAL TERMINAL")
@@ -64,20 +71,7 @@ for i, m_name in enumerate(mercati.keys()):
                 c1, c2, c3, cL, cM, cB, cAction = st.columns([2, 1, 1, 0.6, 0.6, 0.6, 1.5])
                 c1.write(f"**{d['Nome']}**")
                 c2.write(f"**{d['Score']} pts**")
-                c3.write(f"€{d['Price']}" if "MI" in t or "EUR" in t else f"${d['Price']}")
                 
-                cL.markdown(f'<div class="semaforo {"bg-green" if d["L"] else "bg-red"}">L</div>', unsafe_allow_html=True)
-                cM.markdown(f'<div class="semaforo {"bg-green" if d["M"] else "bg-red"}">M</div>', unsafe_allow_html=True)
-                cB.markdown(f'<div class="semaforo {"bg-green" if d["B"] else "bg-red"}">B</div>', unsafe_allow_html=True)
-                
-                with cAction:
-                    with st.expander("➕"):
-                        st.write(f"**Livelli:** Entry: {d['Entry']} | TP: {d['TP']} | SL: {d['SL']}")
-                        fig = go.Figure(data=[go.Candlestick(x=d['History'].index, open=d['History']['Open'], high=d['History']['High'], low=d['History']['Low'], close=d['History']['Close'])])
-                        fig.update_layout(height=250, template="plotly_white", margin=dict(l=0,r=0,b=0,t=0), xaxis_rangeslider_visible=False)
-                        st.plotly_chart(fig, use_container_width=True)
-            st.divider()
-
-with tabs[-1]:
-    st.header("💼 Portafoglio")
-    st.info("Qui vedrai il riepilogo Fineco una volta inseriti i titoli.")
+                # Simbolo valuta corretto
+                valuta = "€" if any(x in t for x in ["MI", "EUR", "PA", "CO"]) else "$"
+                c3.write(f"{valuta}{d['Prezzo']}")
