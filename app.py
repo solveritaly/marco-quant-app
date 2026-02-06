@@ -1,62 +1,36 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
+import requests
 
-# --- CONFIGURAZIONE ---
-st.set_page_config(page_title="Marco-Quant Terminal", layout="wide")
+st.set_page_config(page_title="DEBUG Marco-Quant", layout="wide")
+st.title("🔍 DIAGNOSTICA TERMINALE")
 
-@st.cache_data(ttl=600)
-def get_pro_data(ticker):
-    try:
-        # Scarico dati con gestione errore
-        df = yf.download(ticker, period="1y", interval="1d", progress=False)
-        if df.empty or len(df) < 200: return None
-        
-        info = yf.Ticker(ticker).info
-        last_p = df['Close'].iloc[-1]
-        
-        # Medie per Trendline (B, M, L)
-        sma20 = df['Close'].rolling(20).mean().iloc[-1]
-        sma50 = df['Close'].rolling(50).mean().iloc[-1]
-        sma200 = df['Close'].rolling(200).mean().iloc[-1]
-        
-        # Volatilità e Momentum
-        std20 = df['Close'].rolling(20).std().iloc[-1]
-        
-        return {
-            "name": info.get('shortName', ticker),
-            "price": round(last_p, 2),
-            "L": last_p > sma200, "M": last_p > sma50, "B": last_p > sma20,
-            "score": int(np.clip(30 + (40 if last_p > sma200 else 0) + (20 if last_p > sma50 else 0), 0, 100)),
-            "df": df
-        }
-    except: return None
+# CONTROLLO 1: Le librerie sono caricate?
+st.write("### 1. Verifica Ambiente")
+st.success(f"Libreria yfinance versione: {yf.__version__}")
 
-st.title("🏹 MARCO-QUANT PRO TERMINAL")
-st.write("Verifica Trendline: **L** (200gg), **M** (50gg), **B** (20gg)")
+# CONTROLLO 2: Test Connessione a Yahoo
+st.write("### 2. Test Scansione Mercato")
+test_ticker = "BTC-EUR"
 
-# Liste asset
-assets = ["BTC-EUR", "ETH-EUR", "LDO.MI", "ENEL.MI", "NOVO-B.CO", "GOOGL", "BRK-B"]
-tabs = st.tabs(["📊 Radar Mercati", "💼 Portafoglio Fineco"])
+try:
+    # Usiamo un header per non farci bloccare da Yahoo
+    session = requests.Session()
+    session.headers.update({'User-Agent': 'Mozilla/5.0'})
+    
+    st.write(f"Tentativo di scarico dati per {test_ticker}...")
+    data = yf.download(test_ticker, period="1d", session=session)
+    
+    if data.empty:
+        st.error(f"⚠️ Yahoo ha risposto, ma i dati per {test_ticker} sono VUOTI. (Possibile blocco IP)")
+    else:
+        st.success(f"✅ Dati Ricevuti! Ultimo prezzo: {data['Close'].iloc[-1]}")
+        st.write(data.tail())
 
-with tabs[0]:
-    for a in assets:
-        d = get_pro_data(a)
-        if d:
-            col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
-            col1.write(f"**{d['name']}**")
-            col2.metric("Prezzo", f"€{d['price']}")
-            col3.write(f"Score: **{d['score']}**")
-            
-            # Semafori Trendline
-            with col4:
-                l_mark = "🟢" if d['L'] else "🔴"
-                m_mark = "🟢" if d['M'] else "🔴"
-                b_mark = "🟢" if d['B'] else "🔴"
-                st.write(f"Trend L:{l_mark} M:{m_mark} B:{b_mark}")
-            st.divider()
+except Exception as e:
+    st.error(f"❌ ERRORE CRITICO: {str(e)}")
 
-with tabs[1]:
-    st.write("Inserisci qui i tuoi dati Fineco per monitorare le perdite reali.")
+# CONTROLLO 3: Verifica File Requirements
+st.write("### 3. Istruzioni per te")
+st.info("Se vedi un errore 'ModuleNotFoundError', significa che il file requirements.txt su GitHub non è stato letto correttamente.")
